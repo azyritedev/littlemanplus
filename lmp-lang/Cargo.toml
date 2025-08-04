@@ -1,0 +1,11 @@
+[package]
+name = "lmp-lang"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+chumsky = "0.10.1"
+lmp-common = { path = "../lmp-common" }
+
+[dev-dependencies]
+indoc = "2.0.6"

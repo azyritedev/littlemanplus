@@ -1,0 +1,14 @@
+# cargo
+debug
+target
+
+# rustfmt
+**/*.rs.bk
+
+# msvc rustc
+*.pdb
+
+# cargo mutants
+**/mutants.out*/
+
+.idea/

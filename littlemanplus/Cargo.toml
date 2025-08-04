@@ -1,0 +1,9 @@
+[package]
+name = "littlemanplus"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+lmp-lang = {path = "../lmp-lang"}
+lmp-common = {path = "../lmp-common"}
+thiserror = "2.0.12"
