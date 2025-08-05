@@ -1,0 +1,1 @@
+pub const MEMORY_SIZE: usize = 512;

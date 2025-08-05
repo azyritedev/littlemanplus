@@ -25,6 +25,17 @@ pub enum Instruction<Data> {
     /// Branch if positive, sets the program counter to the specified memory address if the \
     /// accumulator is positive
     BRP(Data) = 8000,
+
+    // Bitwise operations
+    /// Bitwise NOT the accumulator
+    BWN = 10000,
+    /// Bitwise AND the accumulator with the specified memory address
+    BWA(Data) = 11000,
+    /// Bitwise OR the accumulator with the specified memory address
+    BWO(Data) = 12000,
+    /// Bitwise XOR the accumulator with the specified memory address
+    BWX(Data) = 13000,
+
     /// Request input from the user which is stored into the accumulator, overwriting
     INP = 901,
     /// Output the value currently in the accumulator, does not overwrite
@@ -44,6 +55,7 @@ impl Into<i64> for Instruction<i64> {
             HLT => 1,
             INP => 901,
             OUT => 902,
+            BWN => 10000,
 
             ADD(addr) => 1000 + addr,
             SUB(addr) => 2000 + addr,
@@ -52,6 +64,10 @@ impl Into<i64> for Instruction<i64> {
             BRA(addr) => 6000 + addr,
             BRZ(addr) => 7000 + addr,
             BRP(addr) => 8000 + addr,
+
+            BWA(addr) => 11000 + addr,
+            BWO(addr) => 12000 + addr,
+            BWX(addr) => 13000 + addr,
 
             // Not really an instruction, return the data
             DAT(data) => data,
@@ -70,6 +86,7 @@ impl TryFrom<i64> for Instruction<i64> {
             1 => Ok(HLT),
             901 => Ok(INP),
             902 => Ok(OUT),
+            10000 => Ok(BWN),
             // Dynamic instructions
             1000..=1999 => Ok(ADD(value - 1000)),
             2000..=2999 => Ok(SUB(value - 2000)),
@@ -78,6 +95,9 @@ impl TryFrom<i64> for Instruction<i64> {
             6000..=6999 => Ok(BRA(value - 6000)),
             7000..=7999 => Ok(BRZ(value - 7000)),
             8000..=8999 => Ok(BRP(value - 8000)),
+            11000..=11999 => Ok(BWA(value - 11000)),
+            12000..=12999 => Ok(BWO(value - 12000)),
+            13000..=13999 => Ok(BWX(value - 13000)),
             _ => Err(()),
         }
     }
@@ -100,6 +120,11 @@ impl<Data: fmt::Display> fmt::Display for Instruction<Data> {
             BRA(loc) => write!(f, "BRA {}", loc),
             BRZ(loc) => write!(f, "BRZ {}", loc),
             BRP(loc) => write!(f, "BRP {}", loc),
+
+            BWN => write!(f, "BWN"),
+            BWA(loc) => write!(f, "BWA {}", loc),
+            BWO(loc) => write!(f, "BWO {}", loc),
+            BWX(loc) => write!(f, "BWX {}", loc),
 
             DAT(loc) => write!(f, "DAT {}", loc),
         }

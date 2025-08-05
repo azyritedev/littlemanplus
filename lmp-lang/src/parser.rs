@@ -2,6 +2,7 @@
 
 use chumsky::prelude::*;
 use lmp_common::assembly::Instruction;
+use lmp_common::MEMORY_SIZE;
 use std::collections::HashMap;
 
 /// Data attached to each instruction in the **unprocessed** AST
@@ -22,6 +23,12 @@ impl<'a> From<&'a str> for NodeInstructionData<'a> {
     }
 }
 
+impl From<i64> for NodeInstructionData<'_> {
+    fn from(n: i64) -> Self {
+        Self::Num(n)
+    }
+}
+
 type NodeInstruction<'a> = Instruction<NodeInstructionData<'a>>;
 
 /// Node in the AST
@@ -36,22 +43,30 @@ fn num<'a>() -> impl Parser<'a, &'a str, i64> {
 }
 
 fn label<'a>() -> impl Parser<'a, &'a str, &'a str> {
-    text::ascii::ident()
-        // HACK: Use rewind?
-        // If all uppercase then reject as it is probably an opcode (e.g., ADD),
-        // this prevents label from "eating" the opcode when no label is provided
-        .try_map(|s: &str, _span| {
-            if s.chars().all(|c| c.is_ascii_uppercase()) {
-                Err(EmptyErr::default())
-            } else {
-                Ok(s)
-            }
-        })
+    // HACK: Use rewind?
+    // If all uppercase then reject as it is probably an opcode (e.g., ADD),
+    // this prevents label from "eating" the opcode when no label is provided
+    opt_whitespace().ignore_then(text::ascii::ident().filter(|s: &&str| {
+        !s.is_empty() && !s.chars().all(|c| c.is_ascii_uppercase())
+    }))
 }
 
-/// whitespace excl. newlines
+/// at least one whitespace excl. newlines
 fn whitespace<'a>() -> impl Parser<'a, &'a str, ()> {
     text::inline_whitespace().at_least(1)
+}
+
+/// whitespace (optional) excl. newlines
+fn opt_whitespace<'a>() -> impl Parser<'a, &'a str, ()> {
+    text::inline_whitespace().at_least(0)
+}
+
+/// Input that goes after an instruction
+fn instruction_input<'a>() -> impl Parser<'a, &'a str, NodeInstructionData<'a>> {
+    // Based off text::ascii::ident but with @ symbols permitted as the first char
+    // for pointers
+    let text_input = regex("[a-zA-Z_@][a-zA-Z0-9_]*");
+    num().map(|n| n.into()).or(text_input.map(|i: &str| i.into()))
 }
 
 fn instruction<'a>() -> impl Parser<'a, &'a str, NodeInstruction<'a>> {
@@ -60,33 +75,43 @@ fn instruction<'a>() -> impl Parser<'a, &'a str, NodeInstruction<'a>> {
         just("INP").to(Instruction::INP),
         just("OUT").to(Instruction::OUT),
         just("HLT").to(Instruction::HLT),
+        just("BWN").to(Instruction::BWN),
         just("DAT").ignore_then(
             whitespace()
                 .ignore_then(num())
                 .or_not()
-                .map(|data| Instruction::DAT(NodeInstructionData::Num(data.unwrap_or_default()))),
+                .map(|data| Instruction::DAT(data.unwrap_or_default().into())),
         ),
         just("ADD")
-            .ignore_then(whitespace().ignore_then(text::ascii::ident()))
-            .map(|label| Instruction::ADD(label.into())),
+            .ignore_then(whitespace().ignore_then(instruction_input()))
+            .map(|data| Instruction::ADD(data)),
         just("SUB")
-            .ignore_then(whitespace().ignore_then(text::ascii::ident()))
-            .map(|label| Instruction::SUB(label.into())),
+            .ignore_then(whitespace().ignore_then(instruction_input()))
+            .map(|data| Instruction::SUB(data)),
         just("STA")
-            .ignore_then(whitespace().ignore_then(text::ascii::ident()))
-            .map(|label| Instruction::STA(label.into())),
+            .ignore_then(whitespace().ignore_then(instruction_input()))
+            .map(|data| Instruction::STA(data)),
         just("LDA")
-            .ignore_then(whitespace().ignore_then(text::ascii::ident()))
-            .map(|label| Instruction::LDA(label.into())),
+            .ignore_then(whitespace().ignore_then(instruction_input()))
+            .map(|data| Instruction::LDA(data)),
         just("BRA")
-            .ignore_then(whitespace().ignore_then(text::ascii::ident()))
-            .map(|label| Instruction::BRA(label.into())),
+            .ignore_then(whitespace().ignore_then(instruction_input()))
+            .map(|data| Instruction::BRA(data)),
         just("BRZ")
-            .ignore_then(whitespace().ignore_then(text::ascii::ident()))
-            .map(|label| Instruction::BRZ(label.into())),
+            .ignore_then(whitespace().ignore_then(instruction_input()))
+            .map(|data| Instruction::BRZ(data)),
         just("BRP")
-            .ignore_then(whitespace().ignore_then(text::ascii::ident()))
-            .map(|label| Instruction::BRP(label.into())),
+            .ignore_then(whitespace().ignore_then(instruction_input()))
+            .map(|data| Instruction::BRP(data)),
+        just("BWA")
+            .ignore_then(whitespace().ignore_then(instruction_input()))
+            .map(|data| Instruction::BWA(data)),
+        just("BWO")
+            .ignore_then(whitespace().ignore_then(instruction_input()))
+            .map(|data| Instruction::BWO(data)),
+        just("BWX")
+            .ignore_then(whitespace().ignore_then(instruction_input()))
+            .map(|data| Instruction::BWX(data)),
     )))
 }
 
@@ -132,25 +157,30 @@ fn resolve_labels(ast: Vec<Node>) -> Result<Vec<Instruction<i64>>, ()> {
             ($($member:ident),*) => {
                 match node.instruction {
                 $(
+                    $member(NodeInstructionData::Num(n)) => {
+                        $member(n)
+                    },
                     $member(NodeInstructionData::Label(l)) => {
                         let addr = *labels.get(l).expect(&format!("invalid label {l}"));
                         $member(addr as i64)
+                    },
+                    $member(NodeInstructionData::Pointer(p)) => {
+                        let addr = *labels.get(p).expect(&format!("invalid pointer label {p}")) + MEMORY_SIZE;
+                        $member(addr as i64)
                     }
-                    // TODO: Pointers
-                    // $member(NodeInstructionData::Pointer(p)) => {
-                    //     let
-                    // }
                 )*
                     DAT(NodeInstructionData::Num(n)) => DAT(n),
+                    BWN => BWN,
                     INP => INP,
                     OUT => OUT,
                     HLT => HLT,
-                    _ => panic!("invalid instruction"),
+                    _ => panic!("invalid instruction {:?}", node.instruction),
                 }
             }
         }
 
-        label_to_addr!(ADD, SUB, STA, LDA, BRA, BRZ, BRP)
+        // NOTE: DO NOT INCLUDE STATIC INSTRUCTIONS or DAT!! Add them in macro above
+        label_to_addr!(ADD, SUB, STA, LDA, BRA, BRZ, BRP, BWA, BWO, BWX)
     }).collect())
 }
 

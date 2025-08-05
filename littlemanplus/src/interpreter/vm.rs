@@ -1,8 +1,6 @@
-use lmp_common::assembly;
+use lmp_common::{MEMORY_SIZE, assembly};
 use lmp_lang::parser;
 use thiserror::Error;
-
-const MEMORY_SIZE: usize = 512;
 
 #[derive(Debug)]
 pub struct VirtualMachine {
@@ -58,11 +56,20 @@ impl VirtualMachine {
         // Run the program
         loop {
             self.cycles += 1;
+
+            if self.program_counter >= MEMORY_SIZE {
+                println!("program ran to end of memory");
+                break;
+            }
+
             // Fetch
             let cell = self.memory[self.program_counter];
             // Decode
-            let decoded: assembly::Instruction<i64> =
-                cell.data.try_into().expect("failed to decode");
+            let Ok(decoded) = cell.data.try_into() else {
+                println!("failed to decode instruction");
+                self.program_counter += 1;
+                continue;
+            };
             // Execute
             use assembly::Instruction::*;
             match decoded {
@@ -102,6 +109,25 @@ impl VirtualMachine {
                     } else {
                         self.program_counter += 1;
                     }
+                },
+                BWN => {
+                    self.accumulator = !self.accumulator;
+                    self.program_counter += 1;
+                }
+                BWA(addr) => {
+                    let referenced_cell = self.ptr_get(addr);
+                    self.accumulator = self.accumulator & referenced_cell.data;
+                    self.program_counter += 1;
+                },
+                BWO(addr) => {
+                    let referenced_cell = self.ptr_get(addr);
+                    self.accumulator = self.accumulator | referenced_cell.data;
+                    self.program_counter += 1;
+                }
+                BWX(addr) => {
+                    let referenced_cell = self.ptr_get(addr);
+                    self.accumulator = self.accumulator ^ referenced_cell.data;
+                    self.program_counter += 1;
                 }
                 INP => {
                     // TODO: ask user for input
@@ -113,7 +139,7 @@ impl VirtualMachine {
                     self.program_counter += 1;
                 },
                 HLT => break,
-                _ => {} // No op
+                DAT(_) => unreachable!("DAT instruction should have been removed by the compiler"),
             }
         }
 
@@ -139,7 +165,7 @@ impl VirtualMachine {
     /// Write to a location in memory
     fn write(&mut self, loc: usize, data: i64) {
         if loc >= MEMORY_SIZE {
-            panic!("write loc out of bounds")
+            panic!("write loc out of bounds at {loc}")
         }
 
         self.memory[loc].set(data);
@@ -147,23 +173,41 @@ impl VirtualMachine {
 
     /// Write to a cell in memory with an [`i64`] pointer
     fn ptr_write(&mut self, ptr: i64, data: i64) {
-        let loc = ptr as usize;
+        let loc = self.ptr_to_loc(ptr);
 
         self.write(loc, data);
     }
 
-    /// Get the cell occupying a location in memory from an [`i64`].
+    /// Get the cell occupying a location in memory from an [`i64`], following pointers
     ///
     /// # Panics
     /// If the [`i64`] cannot be converted into a [`usize`] or is out of bounds
     fn ptr_get(&self, ptr: i64) -> MemoryCell {
-        let loc = ptr as usize;
-
-        if loc >= MEMORY_SIZE {
-            panic!("read ptr out of bounds")
-        }
+        let loc = self.ptr_to_loc(ptr);
 
         self.memory[loc]
+    }
+
+    /// Resolve the actual [`usize`] memory address of a specified [`i64`]
+    /// following pointers as needed
+    ///
+    /// # Panics
+    /// If the [`i64`] cannot be converted into a [`usize`] or is out of bounds
+    fn ptr_to_loc(&self, ptr: i64) -> usize {
+        let loc = ptr as usize;
+
+        if loc >= MEMORY_SIZE * 2 {
+            panic!("ptr {ptr} out of bounds and was not valid pointer")
+        }
+
+        // Pointer (MEMORY_SIZE + LOCATION) indicates a pointer at that location
+        if loc > MEMORY_SIZE {
+            // Follow the pointer recursively
+            self.ptr_to_loc(self.memory[loc - MEMORY_SIZE].data)
+        } else {
+            // Or else, return the converted loc
+            loc
+        }
     }
 }
 
