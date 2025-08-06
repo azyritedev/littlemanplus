@@ -7,7 +7,8 @@ with a sleek terminal user interface, expanded 512-slot memory and up to 64-bit 
 
 Additional features include:
 
-- Terminal user interface powered by
+- Expanded 512-slot memory with the ability to have up to 999 slots
+- Terminal user interface
 - Expanded instruction set with bitwise operations (`BWN`, `BWO`, `BWX`, etc.)
 - Added `LDR` instruction to load based on an address stored in the accumulator
 
