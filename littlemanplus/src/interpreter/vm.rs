@@ -1,5 +1,6 @@
-use lmp_common::{MEMORY_SIZE, assembly};
+use lmp_common::{assembly, MEMORY_SIZE};
 use lmp_lang::parser;
+use std::fmt::Debug;
 use thiserror::Error;
 
 #[derive(Debug)]
@@ -9,6 +10,11 @@ pub struct VirtualMachine {
     accumulator: i64,
     /// Represents the memory of the virtual machine
     memory: [MemoryCell; MEMORY_SIZE],
+    /// Whether the virtual machine has reached a halt condition
+    halted: bool,
+
+    /// I/O
+    input_buffer: Option<i64>,
 
     // Debug information
     cycles: i64,
@@ -20,12 +26,14 @@ impl VirtualMachine {
             program_counter: 0,
             accumulator: 0,
             memory: [MemoryCell::default(); MEMORY_SIZE],
-            cycles: 0
+            cycles: 0,
+            halted: false,
+            input_buffer: None,
         }
     }
 
-    /// Compile, load and run a provided assembly program
-    pub fn compile_run<S: AsRef<str>>(&mut self, program: S) -> Result<(), VirtualMachineError> {
+    /// Compile the provided assembly program and load it into the virtual machine's memory
+    pub fn compile<S: AsRef<str>>(&mut self, program: S) -> Result<(), VirtualMachineError> {
         let Ok(compiled) = parser::assemble(program.as_ref().trim()) else {
             return Err(VirtualMachineError::CompilerError);
         };
@@ -33,6 +41,9 @@ impl VirtualMachine {
         if compiled.len() > MEMORY_SIZE {
             return Err(VirtualMachineError::MemoryFull);
         }
+
+        // Clear memory
+        self.memory = [MemoryCell::default(); MEMORY_SIZE];
 
         // Load program into memory instruction by instruction
         let mut counter = 0usize;
@@ -53,99 +64,137 @@ impl VirtualMachine {
             counter += 1;
         }
 
-        // Run the program
-        loop {
-            self.cycles += 1;
-
-            if self.program_counter >= MEMORY_SIZE {
-                println!("program ran to end of memory");
-                break;
-            }
-
-            // Fetch
-            let cell = self.memory[self.program_counter];
-            // Decode
-            let Ok(decoded) = cell.data.try_into() else {
-                println!("failed to decode instruction");
-                self.program_counter += 1;
-                continue;
-            };
-            // Execute
-            use assembly::Instruction::*;
-            match decoded {
-                ADD(addr) => {
-                    let referenced_cell = self.ptr_get(addr);
-                    self.accumulator += referenced_cell.data;
-                    self.program_counter += 1
-                }
-                SUB(addr) => {
-                    let referenced_cell = self.ptr_get(addr);
-                    self.accumulator -= referenced_cell.data;
-                    self.program_counter += 1
-                },
-                STA(addr) => {
-                    self.ptr_write(addr, self.accumulator);
-                    self.program_counter += 1
-                },
-                LDA(addr) => {
-                    let referenced_cell = self.ptr_get(addr);
-                    self.accumulator = referenced_cell.data;
-                    self.program_counter += 1
-                },
-                BRA(addr) => {
-                    self.branch(addr);
-                },
-                BRZ(addr) => {
-                    if self.accumulator == 0 {
-                        self.branch(addr);
-                    } else {
-                        self.program_counter += 1;
-                    }
-                }
-                BRP(addr) => {
-                    // BRP includes zero based on 101computing's LMC
-                    if self.accumulator >= 0 {
-                        self.branch(addr);
-                    } else {
-                        self.program_counter += 1;
-                    }
-                },
-                BWN => {
-                    self.accumulator = !self.accumulator;
-                    self.program_counter += 1;
-                }
-                BWA(addr) => {
-                    let referenced_cell = self.ptr_get(addr);
-                    self.accumulator = self.accumulator & referenced_cell.data;
-                    self.program_counter += 1;
-                },
-                BWO(addr) => {
-                    let referenced_cell = self.ptr_get(addr);
-                    self.accumulator = self.accumulator | referenced_cell.data;
-                    self.program_counter += 1;
-                }
-                BWX(addr) => {
-                    let referenced_cell = self.ptr_get(addr);
-                    self.accumulator = self.accumulator ^ referenced_cell.data;
-                    self.program_counter += 1;
-                }
-                INP => {
-                    // TODO: ask user for input
-                    self.accumulator = 10;
-                    self.program_counter += 1;
-                },
-                OUT => {
-                    println!("OUTPUT: {}", self.accumulator);
-                    self.program_counter += 1;
-                },
-                HLT => break,
-                DAT(_) => unreachable!("DAT instruction should have been removed by the compiler"),
-            }
-        }
-
-        println!("Program executed in {} cycles", self.cycles);
+        // Reset registers
+        self.cycles = 0;
+        self.accumulator = 0;
+        self.program_counter = 0;
+        self.halted = false;
+        self.input_buffer = None;
 
         Ok(())
+    }
+
+    pub fn step(&mut self) -> VirtualMachineStep {
+        if self.halted {
+            return VirtualMachineStep::Halted;
+        }
+
+        self.cycles += 1;
+
+        if self.program_counter >= MEMORY_SIZE {
+            println!("program ran to end of memory");
+            self.halted = true;
+            return VirtualMachineStep::Halted;
+        }
+
+        // Fetch
+        let cell = self.memory[self.program_counter];
+        // Decode
+        let Ok(decoded) = cell.data.try_into() else {
+            println!("failed to decode instruction");
+            self.program_counter += 1;
+            // Skip the undecodable instruction; might change to halting the VM in the future
+            return VirtualMachineStep::Advanced;
+        };
+        // Execute
+        use assembly::Instruction::*;
+        match decoded {
+            ADD(addr) => {
+                let referenced_cell = self.ptr_get(addr);
+                self.accumulator += referenced_cell.data;
+                self.program_counter += 1;
+                VirtualMachineStep::Advanced
+            }
+            SUB(addr) => {
+                let referenced_cell = self.ptr_get(addr);
+                self.accumulator -= referenced_cell.data;
+                self.program_counter += 1;
+                VirtualMachineStep::Advanced
+            },
+            STA(addr) => {
+                self.ptr_write(addr, self.accumulator);
+                self.program_counter += 1;
+                VirtualMachineStep::Advanced
+            },
+            LDA(addr) => {
+                let referenced_cell = self.ptr_get(addr);
+                self.accumulator = referenced_cell.data;
+                self.program_counter += 1;
+                VirtualMachineStep::Advanced
+            },
+            BRA(addr) => {
+                self.branch(addr);
+                VirtualMachineStep::Advanced
+            },
+            BRZ(addr) => {
+                if self.accumulator == 0 {
+                    self.branch(addr);
+                } else {
+                    self.program_counter += 1;
+                }
+
+                VirtualMachineStep::Advanced
+            }
+            BRP(addr) => {
+                // BRP includes zero based on 101computing's LMC
+                if self.accumulator >= 0 {
+                    self.branch(addr);
+                } else {
+                    self.program_counter += 1;
+                }
+
+                VirtualMachineStep::Advanced
+            },
+            BWN => {
+                self.accumulator = !self.accumulator;
+                self.program_counter += 1;
+                VirtualMachineStep::Advanced
+            }
+            BWA(addr) => {
+                let referenced_cell = self.ptr_get(addr);
+                self.accumulator = self.accumulator & referenced_cell.data;
+                self.program_counter += 1;
+                VirtualMachineStep::Advanced
+            },
+            BWO(addr) => {
+                let referenced_cell = self.ptr_get(addr);
+                self.accumulator = self.accumulator | referenced_cell.data;
+                self.program_counter += 1;
+                VirtualMachineStep::Advanced
+            }
+            BWX(addr) => {
+                let referenced_cell = self.ptr_get(addr);
+                self.accumulator = self.accumulator ^ referenced_cell.data;
+                self.program_counter += 1;
+                VirtualMachineStep::Advanced
+            }
+            LDR => {
+                let referenced_cell = self.ptr_get(self.accumulator);
+                self.accumulator = referenced_cell.data;
+                self.program_counter += 1;
+                VirtualMachineStep::Advanced
+            }
+            INP => {
+                if let Some(input) = self.input_buffer.take() {
+                    // Attempt to take the input buffer, if it has a value, use it
+                    self.accumulator = input;
+                    self.program_counter += 1;
+                    VirtualMachineStep::Advanced
+                } else {
+                    // Else do not step and ask for input
+                    VirtualMachineStep::InputRequired
+                }
+            },
+            OUT => {
+                self.program_counter += 1;
+                VirtualMachineStep::Output(self.accumulator)
+            },
+            HLT => {
+                self.halted = true;
+                VirtualMachineStep::Halted
+            },
+            DAT(_) => unreachable!("DAT instruction should have been removed by the compiler"),
+        }
     }
 
     /// Set the `program_counter` to a value (usually obtained from memory)
@@ -209,6 +258,27 @@ impl VirtualMachine {
             loc
         }
     }
+
+    // Public access methods
+    pub fn accumulator(&self) -> i64 {
+        self.accumulator
+    }
+
+    pub fn program_counter(&self) -> usize {
+        self.program_counter
+    }
+
+    pub fn cycles(&self) -> i64 {
+        self.cycles
+    }
+
+    pub fn halted(&self) -> bool {
+        self.halted
+    }
+
+    pub fn input(&mut self, input: i64) {
+        self.input_buffer = Some(input);
+    }
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -238,4 +308,18 @@ pub enum VirtualMachineError {
         MEMORY_SIZE
     )]
     MemoryFull,
+}
+
+/// The result of the VM after stepping it by one cycle
+#[derive(Debug)]
+pub enum VirtualMachineStep {
+    /// The VM has executed an instruction
+    Advanced,
+    /// The VM produced an output
+    Output(i64),
+    /// The VM requires an input and will block here without advancing the program counter until the
+    /// input buffer is filled
+    InputRequired,
+    /// The VM has reached a halt condition
+    Halted,
 }

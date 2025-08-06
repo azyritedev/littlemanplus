@@ -7,3 +7,5 @@ edition = "2024"
 lmp-lang = {path = "../lmp-lang"}
 lmp-common = {path = "../lmp-common"}
 thiserror = "2.0.12"
+ratatui = "0.29.0"
+tui-textarea = "0.7.0"

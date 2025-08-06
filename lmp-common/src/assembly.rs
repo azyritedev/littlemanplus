@@ -36,6 +36,8 @@ pub enum Instruction<Data> {
     /// Bitwise XOR the accumulator with the specified memory address
     BWX(Data) = 13000,
 
+    /// Load the contents of the memory address currently stored in the accumulator ("Load from Register")
+    LDR = 900,
     /// Request input from the user which is stored into the accumulator, overwriting
     INP = 901,
     /// Output the value currently in the accumulator, does not overwrite
@@ -53,6 +55,7 @@ impl Into<i64> for Instruction<i64> {
         use Instruction::*;
         match self {
             HLT => 1,
+            LDR => 900,
             INP => 901,
             OUT => 902,
             BWN => 10000,
@@ -84,6 +87,7 @@ impl TryFrom<i64> for Instruction<i64> {
         match value {
             // Fixed instructions
             1 => Ok(HLT),
+            900 => Ok(LDR),
             901 => Ok(INP),
             902 => Ok(OUT),
             10000 => Ok(BWN),
@@ -110,6 +114,7 @@ impl<Data: fmt::Display> fmt::Display for Instruction<Data> {
             INP => write!(f, "INP"),
             OUT => write!(f, "OUT"),
             HLT => write!(f, "HLT"),
+            LDR => write!(f, "LDR"),
 
             ADD(loc) => write!(f, "ADD {}", loc),
             SUB(loc) => write!(f, "SUB {}", loc),

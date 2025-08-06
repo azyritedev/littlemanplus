@@ -76,6 +76,7 @@ fn instruction<'a>() -> impl Parser<'a, &'a str, NodeInstruction<'a>> {
         just("OUT").to(Instruction::OUT),
         just("HLT").to(Instruction::HLT),
         just("BWN").to(Instruction::BWN),
+        just("LDR").to(Instruction::LDR),
         just("DAT").ignore_then(
             whitespace()
                 .ignore_then(num())
@@ -116,6 +117,7 @@ fn instruction<'a>() -> impl Parser<'a, &'a str, NodeInstruction<'a>> {
 }
 
 fn labeled_line<'a>() -> impl Parser<'a, &'a str, Node<'a>> {
+    // FIXME: allow empty lines with trailing whitespace
     let maybe_label = label()
         .then_ignore(whitespace())
         .map(Some)
@@ -179,7 +181,7 @@ fn resolve_labels(ast: Vec<Node>) -> Result<Vec<Instruction<i64>>, ()> {
             }
         }
 
-        // NOTE: DO NOT INCLUDE STATIC INSTRUCTIONS or DAT!! Add them in macro above
+        // NOTE: DO NOT INCLUDE STATIC INSTRUCTIONS or DAT!! Add them in the macro above
         label_to_addr!(ADD, SUB, STA, LDA, BRA, BRZ, BRP, BWA, BWO, BWX)
     }).collect())
 }
