@@ -2,6 +2,7 @@
 name = "littlemanplus"
 version = "0.1.0"
 edition = "2024"
+license = "GPL-3"
 
 [dependencies]
 lmp-lang = {path = "../lmp-lang"}
