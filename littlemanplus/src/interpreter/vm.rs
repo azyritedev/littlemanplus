@@ -89,7 +89,6 @@ impl VirtualMachine {
         self.cycles += 1;
 
         if self.program_counter >= MEMORY_SIZE {
-            println!("program ran to end of memory");
             self.halted = true;
             return VirtualMachineStep::Halted;
         }
@@ -98,7 +97,6 @@ impl VirtualMachine {
         let cell = self.memory[self.program_counter];
         // Decode
         let Ok(decoded) = cell.data.try_into() else {
-            println!("failed to decode instruction");
             self.program_counter += 1;
             // Skip the undecodable instruction; might change to halting the VM in the future
             return VirtualMachineStep::Advanced;
