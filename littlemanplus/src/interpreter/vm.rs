@@ -65,13 +65,20 @@ impl VirtualMachine {
         }
 
         // Reset registers
+        self.reset();
+        self.halted = false;
+
+        Ok(())
+    }
+
+    /// Reset the state of the VM (does nothing if VM is not halted)
+    pub fn reset(&mut self) {
+        if !self.halted { return; }
+
         self.cycles = 0;
         self.accumulator = 0;
         self.program_counter = 0;
-        self.halted = false;
         self.input_buffer = None;
-
-        Ok(())
     }
 
     pub fn step(&mut self) -> VirtualMachineStep {

@@ -42,7 +42,7 @@ impl TerminalInterface<'_> {
         while !self.should_exit {
             terminal.draw(|frame| frame.render_widget(&mut self, frame.area())).unwrap();
             // Do not block when there aren't any events to read
-            if let Ok(true) = event::poll(::core::time::Duration::from_secs(0)) {
+            if let Ok(true) = event::poll(core::time::Duration::from_secs(0)) {
                 if let Event::Key(event) = event::read().unwrap() {
                     self.handle_key(event);
                 }
@@ -126,6 +126,12 @@ impl TerminalInterface<'_> {
 
                     self.vm_on = true;
                 }
+                KeyCode::Char('n') => {
+                    if !self.vm_on { // only allow clearing when VM is not on
+                        self.outputs.clear();
+                        self.vm.reset();
+                    }
+                }
                 _ => {} // No-op
             }
         } else {
@@ -177,7 +183,10 @@ impl TerminalInterface<'_> {
     fn render_cpu(&self, area: Rect, buf: &mut Buffer) {
         let outer_block = Block::bordered().title("Central Processing Unit");
 
-        let [stats_area] = Layout::vertical([Constraint::Ratio(1, 5)]).areas(outer_block.inner(area));
+        let [status_area, stats_area] = Layout::vertical([Constraint::Ratio(1, 6),Constraint::Ratio(1, 3)]).areas(outer_block.inner(area));
+        Paragraph::new(vec![
+            if self.vm_on { "VM ON".bold().fg(Color::Green).into() } else { "VM OFF".fg(Color::Red).bold().into() }
+        ]).render(status_area, buf);
         let [program_counter_area, accumulator_area, cycles_area] = Layout::horizontal([
             Constraint::Ratio(1, 3),
             Constraint::Ratio(1, 3),
