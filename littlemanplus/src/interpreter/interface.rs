@@ -285,35 +285,3 @@ impl TerminalInterface<'_> {
         ]).block(block).render(area, buf);
     }
 }
-
-struct TerminalGrid {
-    cols: usize,
-    rows: usize,
-}
-
-impl TerminalGrid {
-    fn new(cols: usize, rows: usize) -> Self {
-        Self { cols, rows }
-    }
-}
-
-impl Widget for TerminalGrid {
-    fn render(self, area: Rect, buf: &mut Buffer) {
-        let col_constraints = (0..self.cols).map(|_| Constraint::Length(9));
-        let row_constraints = (0..self.rows).map(|_| Constraint::Length(2));
-        let horizontal = Layout::horizontal(col_constraints).spacing(0);
-        let vertical = Layout::vertical(row_constraints).spacing(0);
-
-        let rows = vertical.split(area);
-        let cells = rows.iter().flat_map(|&row| horizontal.split(row).to_vec());
-
-        for (i, cell) in cells.enumerate() {
-            Paragraph::new(vec![
-                format!("{:02}", i + 1).into(),
-                "012345".into()
-            ])
-                .block(Block::default())
-                .render(cell, buf);
-        }
-    }
-}
