@@ -18,6 +18,8 @@ pub struct VirtualMachine {
 
     // Debug information
     cycles: i64,
+    /// Last accessed memory location
+    accessing: usize,
 }
 
 impl VirtualMachine {
@@ -27,6 +29,7 @@ impl VirtualMachine {
             accumulator: 0,
             memory: [MemoryCell::default(); MEMORY_SIZE],
             cycles: 0,
+            accessing: 0,
             halted: false,
             input_buffer: None,
         }
@@ -42,8 +45,8 @@ impl VirtualMachine {
             return Err(VirtualMachineError::MemoryFull);
         }
 
-        // Clear memory
-        self.memory = [MemoryCell::default(); MEMORY_SIZE];
+        // Clear memory and reset registers
+        self.reset();
 
         // Load program into memory instruction by instruction
         let mut counter = 0usize;
@@ -64,8 +67,7 @@ impl VirtualMachine {
             counter += 1;
         }
 
-        // Reset registers
-        self.reset();
+        // Reset halt state
         self.halted = false;
 
         Ok(())
@@ -75,7 +77,9 @@ impl VirtualMachine {
     pub fn reset(&mut self) {
         if !self.halted { return; }
 
+        self.memory = [MemoryCell::default(); MEMORY_SIZE];
         self.cycles = 0;
+        self.accessing = 0;
         self.accumulator = 0;
         self.program_counter = 0;
         self.input_buffer = None;
@@ -236,7 +240,7 @@ impl VirtualMachine {
     ///
     /// # Panics
     /// If the [`i64`] cannot be converted into a [`usize`] or is out of bounds
-    fn ptr_get(&self, ptr: i64) -> MemoryCell {
+    fn ptr_get(&mut self, ptr: i64) -> MemoryCell {
         let loc = self.ptr_to_loc(ptr);
 
         self.memory[loc]
@@ -245,9 +249,11 @@ impl VirtualMachine {
     /// Resolve the actual [`usize`] memory address of a specified [`i64`]
     /// following pointers as needed
     ///
+    /// Also records memory location accessed (so it requires mutability)
+    ///
     /// # Panics
     /// If the [`i64`] cannot be converted into a [`usize`] or is out of bounds
-    fn ptr_to_loc(&self, ptr: i64) -> usize {
+    fn ptr_to_loc(&mut self, ptr: i64) -> usize {
         let loc = ptr as usize;
 
         if loc >= MEMORY_SIZE * 2 {
@@ -257,9 +263,12 @@ impl VirtualMachine {
         // Pointer (MEMORY_SIZE + LOCATION) indicates a pointer at that location
         if loc > MEMORY_SIZE {
             // Follow the pointer recursively
-            self.ptr_to_loc(self.memory[loc - MEMORY_SIZE].data)
+            let resolved_loc = loc - MEMORY_SIZE;
+            self.accessing = resolved_loc;
+            self.ptr_to_loc(self.memory[resolved_loc].data)
         } else {
             // Or else, return the converted loc
+            self.accessing = loc;
             loc
         }
     }
@@ -283,6 +292,14 @@ impl VirtualMachine {
 
     pub fn input(&mut self, input: i64) {
         self.input_buffer = Some(input);
+    }
+
+    pub fn memory(&self) -> &[MemoryCell] {
+        &self.memory
+    }
+
+    pub fn accessing(&self) -> usize {
+        self.accessing
     }
 }
 

@@ -15,6 +15,7 @@ pub struct TerminalInterface<'a> {
     program_textarea: TextArea<'a>,
     outputs: Vec<i64>,
     outputs_state: ListState,
+    memory_state: ListState,
     vm_on: bool,
 }
 
@@ -34,6 +35,7 @@ impl TerminalInterface<'_> {
             program_textarea,
             outputs: Vec::new(),
             outputs_state: ListState::default(),
+            memory_state: ListState::default(),
             vm_on: false,
         }
     }
@@ -65,6 +67,14 @@ impl TerminalInterface<'_> {
                 }
             }
         }
+    }
+
+    /// Set the currently loaded program in the interface. Does not run it!
+    pub fn set_program<S: AsRef<str>>(&mut self, program: S) {
+        // Bit hacky, but avoids having us split the text by newlines
+        self.program_textarea.set_yank_text(program.as_ref().trim());
+        self.program_textarea.paste();
+        self.program_textarea.set_yank_text("");
     }
 
     fn handle_key(&mut self, key: KeyEvent) {
@@ -144,15 +154,17 @@ impl TerminalInterface<'_> {
 // Allow TerminalInterface to be rendered
 impl Widget for &mut TerminalInterface<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let [header_area, main_area] = Layout::vertical([
-            Constraint::Ratio(1, 5),
-            Constraint::Fill(1)
+        let [header_area, main_area, footer_area] = Layout::vertical([
+            Constraint::Length(3),
+            Constraint::Fill(1),
+            Constraint::Length(3),
         ]).areas(area);
 
-        let [program_area, cpu_io_area, ram_area] = Layout::horizontal([
-            Constraint::Ratio(1, 6),
+        let [program_area, cpu_io_area, ram_area, config_area] = Layout::horizontal([
             Constraint::Ratio(2, 6),
-            Constraint::Ratio(3, 6),
+            Constraint::Ratio(2, 6),
+            Constraint::Ratio(1, 6),
+            Constraint::Ratio(1, 6),
         ]).areas(main_area);
 
         let [cpu_area, io_area] = Layout::vertical([
@@ -165,6 +177,8 @@ impl Widget for &mut TerminalInterface<'_> {
         self.render_cpu(cpu_area, buf);
         self.render_io(io_area, buf);
         self.render_ram(ram_area, buf);
+        self.render_footer(footer_area, buf);
+        self.render_config(config_area, buf);
     }
 }
 
@@ -177,15 +191,15 @@ impl TerminalInterface<'_> {
     fn render_header(&self, area: Rect, buf: &mut Buffer) {
         Paragraph::new(vec![
             "Little Man Plus".bold().into_centered_line()
-        ]).block(Block::bordered()).render(area, buf);
+        ]).block(Block::bordered().border_type(BorderType::Double).cyan()).render(area, buf);
     }
 
     fn render_cpu(&self, area: Rect, buf: &mut Buffer) {
         let outer_block = Block::bordered().title("Central Processing Unit");
 
-        let [status_area, stats_area] = Layout::vertical([Constraint::Ratio(1, 6),Constraint::Ratio(1, 3)]).areas(outer_block.inner(area));
+        let [status_area, stats_area] = Layout::vertical([Constraint::Length(2), Constraint::Length(3)]).areas(outer_block.inner(area));
         Paragraph::new(vec![
-            if self.vm_on { "VM ON".bold().fg(Color::Green).into() } else { "VM OFF".fg(Color::Red).bold().into() }
+            if self.vm_on { "VM Running".bold().fg(Color::Green).into() } else { "VM Halted".fg(Color::Red).bold().into() }
         ]).render(status_area, buf);
         let [program_counter_area, accumulator_area, cycles_area] = Layout::horizontal([
             Constraint::Ratio(1, 3),
@@ -238,8 +252,68 @@ impl TerminalInterface<'_> {
     fn render_ram(&mut self, area: Rect, buf: &mut Buffer) {
         let outer_block = Block::bordered().title("Memory");
 
-        // TODO: Render RAM
+        let list_items: Vec<ListItem> = self.vm.memory().iter().enumerate().map(|(addr, cell)| {
+            ListItem::new(vec![
+                format!("{:<3}{addr:0>3}: {}", if self.vm.program_counter() == addr { ">>" } else { "" }, cell.data).into(),
+            ])
+        }).collect();
+
+        let list = List::new(list_items).block(outer_block).highlight_style(Style::default().fg(Color::Black).bg(Color::White));
+        // Select the last accessed address
+        let accessing = self.vm.accessing();
+        self.memory_state.select(Some(accessing));
+
+        StatefulWidget::render(list, area, buf, &mut self.memory_state);
+    }
+
+    fn render_config(&mut self, area: Rect, buf: &mut Buffer) {
+        let outer_block = Block::bordered().title("Configuration");
 
         outer_block.render(area, buf);
+    }
+
+    fn render_footer(&mut self, area: Rect, buf: &mut Buffer) {
+        let block = Block::bordered();
+
+        Paragraph::new(vec![
+            Line::from(vec![
+                "Ctrl+R".fg(Color::Black).bg(Color::White),
+                " Run Program ".into(),
+                "Ctrl+N".fg(Color::Black).bg(Color::White),
+                " Reset VM ".into(),
+            ])
+        ]).block(block).render(area, buf);
+    }
+}
+
+struct TerminalGrid {
+    cols: usize,
+    rows: usize,
+}
+
+impl TerminalGrid {
+    fn new(cols: usize, rows: usize) -> Self {
+        Self { cols, rows }
+    }
+}
+
+impl Widget for TerminalGrid {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        let col_constraints = (0..self.cols).map(|_| Constraint::Length(9));
+        let row_constraints = (0..self.rows).map(|_| Constraint::Length(2));
+        let horizontal = Layout::horizontal(col_constraints).spacing(0);
+        let vertical = Layout::vertical(row_constraints).spacing(0);
+
+        let rows = vertical.split(area);
+        let cells = rows.iter().flat_map(|&row| horizontal.split(row).to_vec());
+
+        for (i, cell) in cells.enumerate() {
+            Paragraph::new(vec![
+                format!("{:02}", i + 1).into(),
+                "012345".into()
+            ])
+                .block(Block::default())
+                .render(cell, buf);
+        }
     }
 }
