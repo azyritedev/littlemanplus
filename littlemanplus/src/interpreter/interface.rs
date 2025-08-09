@@ -1,4 +1,5 @@
 use super::vm::{VirtualMachine, VirtualMachineStep};
+use derive_setters::Setters;
 use ratatui::crossterm::event;
 use ratatui::crossterm::event::{Event, KeyCode, KeyEvent};
 use ratatui::prelude::*;
@@ -17,6 +18,7 @@ pub struct TerminalInterface<'a> {
     outputs_state: ListState,
     memory_state: ListState,
     vm_on: bool,
+    current_popup: Option<Popup<'a>>,
 }
 
 // See other impl for rendering logic
@@ -37,12 +39,28 @@ impl TerminalInterface<'_> {
             outputs_state: ListState::default(),
             memory_state: ListState::default(),
             vm_on: false,
+            current_popup: None,
         }
     }
 
     pub fn run(mut self, mut terminal: DefaultTerminal) {
         while !self.should_exit {
-            terminal.draw(|frame| frame.render_widget(&mut self, frame.area())).unwrap();
+            terminal.draw(|frame| {
+                frame.render_widget(&mut self, frame.area());
+
+                // When WidgetRef is stable, this clone can be removed
+                if let Some(popup) = self.current_popup.as_ref().cloned() {
+                    let area = frame.area();
+                    let popup_area = Rect {
+                        x: area.width / 4,
+                        y: area.height / 3,
+                        width: area.width / 2,
+                        height: area.height / 3,
+                    };
+
+                    frame.render_widget(popup, popup_area);
+                }
+            }).unwrap();
             // Do not block when there aren't any events to read
             if let Ok(true) = event::poll(core::time::Duration::from_secs(0)) {
                 if let Event::Key(event) = event::read().unwrap() {
@@ -78,10 +96,21 @@ impl TerminalInterface<'_> {
     }
 
     fn handle_key(&mut self, key: KeyEvent) {
+        // Catch all key events if a popup is up
+        if self.current_popup.is_some() {
+            match key.code {
+                KeyCode::Enter => {
+                    self.current_popup = None;
+                }
+                _ => {} // No-op
+            }
+            return
+        }
+
         if key.code == KeyCode::Esc {
             self.should_exit = true;
         }
-
+        
         if key.modifiers.contains(event::KeyModifiers::ALT) {
             // Alt + ... keys
             // i.e., selection key combos
@@ -126,8 +155,9 @@ impl TerminalInterface<'_> {
                 KeyCode::Char('r') => {
                     // Run the program
                     if let Err(error) = self.vm.compile(self.program_textarea.lines().join("\n")) {
-                        // TODO: handle error
-                        self.outputs.push(999);
+                        let error_popup = Popup::default().title("Compiler Error")
+                            .content(format!("A compiler error occurred: {error}"));
+                        self.current_popup = Some(error_popup);
                         return;
                     }
 
@@ -281,7 +311,43 @@ impl TerminalInterface<'_> {
                 " Run Program ".into(),
                 "Ctrl+N".fg(Color::Black).bg(Color::White),
                 " Reset VM ".into(),
+                " | ".fg(Color::DarkGray),
             ])
         ]).block(block).render(area, buf);
+    }
+}
+
+#[derive(Debug, Default, Setters, Clone)]
+struct Popup<'a> {
+    #[setters(into)]
+    title: Line<'a>,
+    #[setters(into)]
+    content: Text<'a>,
+    border_style: Style,
+    title_style: Style,
+    style: Style,
+}
+
+impl Widget for Popup<'_> {
+    fn render(mut self, area: Rect, buf: &mut Buffer) {
+        // Add line break + exit instructions
+        self.content.push_line(Line::default());
+        self.content.push_line(Line::from(vec![
+            "Press ".into(),
+            "Enter".fg(Color::Black).bg(Color::White).into(),
+            " to dismiss".into(),
+        ]));
+
+        Clear.render(area, buf);
+        let block = Block::bordered()
+            .title(self.title)
+            .title_style(self.title_style)
+            .border_style(self.border_style)
+            .padding(Padding::new(1, 1, 0, 0));
+        Paragraph::new(self.content)
+            .wrap(Wrap { trim: true })
+            .style(self.style)
+            .block(block)
+            .render(area, buf);
     }
 }

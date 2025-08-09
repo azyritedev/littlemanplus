@@ -38,6 +38,7 @@ impl VirtualMachine {
     /// Compile the provided assembly program and load it into the virtual machine's memory
     pub fn compile<S: AsRef<str>>(&mut self, program: S) -> Result<(), VirtualMachineError> {
         let Ok(compiled) = parser::assemble(program.as_ref().trim()) else {
+            // TODO: More detailed error reporting
             return Err(VirtualMachineError::CompilerError);
         };
 
