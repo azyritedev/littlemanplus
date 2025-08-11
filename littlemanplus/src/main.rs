@@ -16,30 +16,31 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 mod interpreter;
+mod config;
 
 use interpreter::interface::TerminalInterface;
 
 fn main() {
     const PROGRAM: &str = r#"
-    init   LDA v0
+       INP
        STA 90
-       LDA v1
+       INP
        STA 91
-       LDA v2
+       INP
        STA 92
-       LDA v3
+       INP
        STA 93
-       LDA v4
+       INP
        STA 94
-       LDA v5
+       INP
        STA 95
-       LDA v6
+       INP
        STA 96
-       LDA v7
+       INP
        STA 97
-       LDA v8
+       INP
        STA 98
-       LDA v9
+       INP
        STA 99
 loop   LDA true
        STA sorted
@@ -94,16 +95,7 @@ false  DAT 0
 one    DAT 1
 first  DAT 90
 last   DAT 99
-v0     DAT 32
-v1     DAT 7
-v2     DAT 19
-v3     DAT 75
-v4     DAT 21
-v5     DAT 14
-v6     DAT 95
-v7     DAT 35
-v8     DAT 61
-v9     DAT 50"#;
+"#;
     let terminal = ratatui::init();
     let mut tui = TerminalInterface::new();
     tui.set_program(PROGRAM);

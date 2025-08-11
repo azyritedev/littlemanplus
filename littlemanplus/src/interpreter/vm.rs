@@ -91,10 +91,9 @@ impl VirtualMachine {
             return VirtualMachineStep::Halted;
         }
 
-        self.cycles += 1;
-
         if self.program_counter >= MEMORY_SIZE {
             self.halted = true;
+            self.cycles += 1;
             return VirtualMachineStep::Halted;
         }
 
@@ -113,27 +112,32 @@ impl VirtualMachine {
                 let referenced_cell = self.ptr_get(addr);
                 self.accumulator += referenced_cell.data;
                 self.program_counter += 1;
+                self.cycles += 1;
                 VirtualMachineStep::Advanced
             }
             SUB(addr) => {
                 let referenced_cell = self.ptr_get(addr);
                 self.accumulator -= referenced_cell.data;
                 self.program_counter += 1;
+                self.cycles += 1;
                 VirtualMachineStep::Advanced
             },
             STA(addr) => {
                 self.ptr_write(addr, self.accumulator);
                 self.program_counter += 1;
+                self.cycles += 1;
                 VirtualMachineStep::Advanced
             },
             LDA(addr) => {
                 let referenced_cell = self.ptr_get(addr);
                 self.accumulator = referenced_cell.data;
                 self.program_counter += 1;
+                self.cycles += 1;
                 VirtualMachineStep::Advanced
             },
             BRA(addr) => {
                 self.branch(addr);
+                self.cycles += 1;
                 VirtualMachineStep::Advanced
             },
             BRZ(addr) => {
@@ -142,6 +146,8 @@ impl VirtualMachine {
                 } else {
                     self.program_counter += 1;
                 }
+
+                self.cycles += 1;
 
                 VirtualMachineStep::Advanced
             }
@@ -153,35 +159,42 @@ impl VirtualMachine {
                     self.program_counter += 1;
                 }
 
+                self.cycles += 1;
+
                 VirtualMachineStep::Advanced
             },
             BWN => {
                 self.accumulator = !self.accumulator;
                 self.program_counter += 1;
+                self.cycles += 1;
                 VirtualMachineStep::Advanced
             }
             BWA(addr) => {
                 let referenced_cell = self.ptr_get(addr);
                 self.accumulator = self.accumulator & referenced_cell.data;
                 self.program_counter += 1;
+                self.cycles += 1;
                 VirtualMachineStep::Advanced
             },
             BWO(addr) => {
                 let referenced_cell = self.ptr_get(addr);
                 self.accumulator = self.accumulator | referenced_cell.data;
                 self.program_counter += 1;
+                self.cycles += 1;
                 VirtualMachineStep::Advanced
             }
             BWX(addr) => {
                 let referenced_cell = self.ptr_get(addr);
                 self.accumulator = self.accumulator ^ referenced_cell.data;
                 self.program_counter += 1;
+                self.cycles += 1;
                 VirtualMachineStep::Advanced
             }
             LDR => {
                 let referenced_cell = self.ptr_get(self.accumulator);
                 self.accumulator = referenced_cell.data;
                 self.program_counter += 1;
+                self.cycles += 1;
                 VirtualMachineStep::Advanced
             }
             INP => {
@@ -189,6 +202,7 @@ impl VirtualMachine {
                     // Attempt to take the input buffer, if it has a value, use it
                     self.accumulator = input;
                     self.program_counter += 1;
+                    self.cycles += 1;
                     VirtualMachineStep::Advanced
                 } else {
                     // Else do not step and ask for input
@@ -197,10 +211,12 @@ impl VirtualMachine {
             },
             OUT => {
                 self.program_counter += 1;
+                self.cycles += 1;
                 VirtualMachineStep::Output(self.accumulator)
             },
             HLT => {
                 self.halted = true;
+                self.cycles += 1;
                 VirtualMachineStep::Halted
             },
             DAT(_) => unreachable!("DAT instruction should have been removed by the compiler"),
