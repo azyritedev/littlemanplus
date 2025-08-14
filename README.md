@@ -12,6 +12,12 @@ Additional features include:
 - Expanded instruction set with bitwise operations (`BWN`, `BWO`, `BWX`, etc.)
 - Added `LDR` instruction to load based on an address stored in the accumulator
 
+## Usage
+
+To download a pre-built binary, visit the [releases](https://github.com/azyrite/littlemanplus/releases/latest) page and
+select the executable that matches your platform. The binary should be run in a terminal window so the terminal user
+interface can be launched.
+
 ## License
 Copyright (c) 2025 azyrite
 
